@@ -1,0 +1,748 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Volume Engine v2 — Irregular Solid Calculator</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Orbitron:wght@400;600;700;900&family=Rajdhani:wght@300;400;500;600;700&display=swap" rel="stylesheet"/>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#0a0700;
+  --surface:#100d04;
+  --panel:#18130a;
+  --panel2:#1f1810;
+  --border:#3a2e18;
+  --border2:#4d3d1f;
+  --amber:#ffaa00;
+  --amber2:#ff8800;
+  --amber3:#ffd166;
+  --green:#39ff14;
+  --green2:#00e676;
+  --red:#ff3c3c;
+  --cs:#e040fb;
+  --vb:#00bcd4;
+  --text:#d4b483;
+  --text2:#7a6040;
+  --glow:rgba(255,170,0,0.2);
+  --scan:rgba(255,170,0,0.03);
+}
+
+body{
+  font-family:'Rajdhani',sans-serif;
+  background:var(--bg);
+  color:var(--text);
+  min-height:100vh;
+  overflow-x:hidden;
+  cursor:crosshair;
+}
+
+/* Scanlines overlay */
+body::before{
+  content:'';position:fixed;inset:0;pointer-events:none;z-index:999;
+  background:repeating-linear-gradient(0deg,transparent,transparent 2px,var(--scan) 2px,var(--scan) 4px);
+}
+
+/* CRT flicker */
+@keyframes flicker{0%,100%{opacity:1}92%{opacity:.97}93%{opacity:.92}94%{opacity:.97}}
+body{animation:flicker 8s infinite}
+
+/* Grid background */
+#grid{position:fixed;inset:0;pointer-events:none;z-index:0;opacity:.4}
+
+/* ── TOP BAR ───────────────────────────────────────────────── */
+.topbar{
+  position:relative;z-index:10;
+  display:flex;align-items:center;justify-content:space-between;
+  padding:12px 28px;
+  background:var(--panel);
+  border-bottom:2px solid var(--amber2);
+  box-shadow:0 0 30px rgba(255,136,0,.2);
+}
+.logo{
+  font-family:'Orbitron',sans-serif;
+  font-size:18px;font-weight:900;
+  color:var(--amber);
+  letter-spacing:.15em;
+  text-shadow:0 0 20px var(--amber),0 0 40px rgba(255,170,0,.4);
+}
+.logo span{color:var(--amber3);font-size:12px;display:block;font-weight:400;letter-spacing:.3em;margin-top:1px}
+.topbar-right{display:flex;gap:16px;align-items:center}
+.sys-pill{
+  font-family:'Share Tech Mono',monospace;
+  font-size:10px;padding:4px 12px;border-radius:2px;
+  border:1px solid var(--border2);
+  background:rgba(255,170,0,.07);
+  color:var(--text2);letter-spacing:.08em;
+}
+.sys-pill.on{color:var(--green);border-color:rgba(57,255,20,.3);background:rgba(57,255,20,.07);
+  box-shadow:0 0 8px rgba(57,255,20,.2)}
+.clock{
+  font-family:'Share Tech Mono',monospace;
+  font-size:12px;color:var(--amber2);letter-spacing:.1em;
+}
+
+/* ── MAIN LAYOUT ───────────────────────────────────────────── */
+.main{
+  position:relative;z-index:1;
+  display:grid;
+  grid-template-rows:auto 1fr;
+  grid-template-columns:1fr 1fr;
+  grid-template-areas:
+    "controls viewer"
+    "result   viewer";
+  gap:0;
+  min-height:calc(100vh - 60px);
+}
+
+/* ── CONTROLS PANEL ────────────────────────────────────────── */
+.controls{
+  grid-area:controls;
+  padding:28px 28px 20px;
+  border-right:1px solid var(--border);
+  border-bottom:1px solid var(--border);
+  background:linear-gradient(180deg,#120e05 0%,#0a0700 100%);
+}
+
+.section-title{
+  font-family:'Share Tech Mono',monospace;
+  font-size:10px;letter-spacing:.25em;color:var(--amber2);
+  margin-bottom:14px;
+  display:flex;align-items:center;gap:10px;
+}
+.section-title::after{content:'';flex:1;height:1px;background:linear-gradient(90deg,var(--border2),transparent)}
+
+/* Backend toggle */
+.be-strip{
+  display:flex;gap:0;margin-bottom:20px;
+  border:1px solid var(--border2);border-radius:3px;overflow:hidden;
+}
+.be-opt{
+  flex:1;padding:9px 0;text-align:center;
+  font-family:'Share Tech Mono',monospace;font-size:11px;letter-spacing:.1em;
+  background:transparent;color:var(--text2);border:none;cursor:pointer;
+  transition:all .2s;
+}
+.be-opt.active{background:var(--amber2);color:#000;font-weight:700;
+  text-shadow:none;box-shadow:inset 0 0 10px rgba(0,0,0,.2)}
+.be-opt:not(.active):hover{background:rgba(255,170,0,.08);color:var(--amber)}
+
+.api-line{
+  display:flex;gap:8px;align-items:center;margin-bottom:20px;
+  font-family:'Share Tech Mono',monospace;font-size:10px;color:var(--text2);
+}
+.api-line input{
+  flex:1;background:#080500;border:1px solid var(--border2);
+  color:var(--amber3);font-family:'Share Tech Mono',monospace;font-size:10px;
+  padding:6px 10px;border-radius:2px;outline:none;
+  transition:border-color .2s;
+}
+.api-line input:focus{border-color:var(--amber)}
+.ping-btn{
+  background:transparent;border:1px solid var(--border2);
+  color:var(--amber2);font-family:'Share Tech Mono',monospace;font-size:10px;
+  padding:6px 12px;border-radius:2px;cursor:pointer;letter-spacing:.08em;
+  transition:all .2s;
+}
+.ping-btn:hover{background:rgba(255,170,0,.1);border-color:var(--amber)}
+.api-dot{width:8px;height:8px;border-radius:50%;background:var(--border2);flex-shrink:0;
+  transition:all .3s;box-shadow:none}
+.api-dot.ok{background:var(--green);box-shadow:0 0 8px var(--green)}
+.api-dot.err{background:var(--red);box-shadow:0 0 8px var(--red)}
+
+/* Solid selector — big styled select */
+.solid-select-wrap{position:relative;margin-bottom:16px}
+.solid-select-wrap::after{
+  content:'▼';position:absolute;right:14px;top:50%;transform:translateY(-50%);
+  font-size:10px;color:var(--amber2);pointer-events:none;
+}
+select{
+  width:100%;background:#080500;
+  border:1px solid var(--border2);color:var(--amber3);
+  font-family:'Rajdhani',sans-serif;font-size:15px;font-weight:600;
+  padding:11px 36px 11px 14px;border-radius:2px;outline:none;
+  -webkit-appearance:none;transition:border-color .2s;
+  letter-spacing:.04em;
+}
+select:focus{border-color:var(--amber);box-shadow:0 0 12px var(--glow)}
+select option{background:#100d04}
+
+/* Solid info strip */
+.solid-meta{
+  background:#080500;border:1px solid var(--border);border-left:3px solid var(--amber2);
+  padding:12px 14px;margin-bottom:16px;border-radius:0 2px 2px 0;
+}
+.solid-desc{font-size:13px;color:var(--text2);line-height:1.6;font-weight:400}
+.solid-eq{
+  font-family:'Share Tech Mono',monospace;font-size:11px;
+  color:var(--amber3);margin-top:8px;line-height:1.5;
+  padding:6px 10px;background:rgba(255,170,0,.04);border-radius:2px;
+  border:1px solid rgba(255,170,0,.1);word-break:break-all;
+}
+.tags{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
+.tag{
+  font-family:'Share Tech Mono',monospace;
+  font-size:9px;letter-spacing:.1em;padding:3px 8px;border-radius:2px;
+}
+.tag:nth-child(1){background:rgba(255,136,0,.12);color:#ffaa44;border:1px solid rgba(255,136,0,.25)}
+.tag:nth-child(2){background:rgba(0,188,212,.1);color:#4dd0e1;border:1px solid rgba(0,188,212,.2)}
+.tag:nth-child(3){background:rgba(57,255,20,.08);color:#76ff56;border:1px solid rgba(57,255,20,.18)}
+
+/* Parameter grid */
+.param-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:18px}
+.param-block{}
+.field-label{
+  font-family:'Share Tech Mono',monospace;
+  font-size:9px;letter-spacing:.15em;color:var(--amber2);
+  margin-bottom:5px;text-transform:uppercase;
+}
+input[type=number]{
+  width:100%;background:#080500;
+  border:1px solid var(--border2);color:var(--amber3);
+  font-family:'Share Tech Mono',monospace;font-size:14px;
+  padding:9px 12px;border-radius:2px;outline:none;
+  transition:border-color .2s,box-shadow .2s;-webkit-appearance:none;
+}
+input[type=number]:focus{border-color:var(--amber);box-shadow:0 0 10px var(--glow)}
+
+/* Calculate button */
+.btn-calc{
+  width:100%;padding:14px;
+  background:transparent;
+  border:2px solid var(--amber);
+  color:var(--amber);
+  font-family:'Orbitron',sans-serif;font-size:13px;font-weight:700;
+  letter-spacing:.2em;text-transform:uppercase;
+  border-radius:2px;cursor:pointer;
+  position:relative;overflow:hidden;
+  transition:all .2s;
+}
+.btn-calc::before{
+  content:'';position:absolute;inset:0;
+  background:var(--amber);transform:translateX(-100%);
+  transition:transform .25s ease;z-index:0;
+}
+.btn-calc:hover::before{transform:translateX(0)}
+.btn-calc:hover{color:#000}
+.btn-calc span{position:relative;z-index:1}
+.btn-calc.loading{opacity:.6;cursor:wait}
+
+/* ── RESULT PANEL ─────────────────────────────────────────── */
+.result{
+  grid-area:result;
+  padding:20px 28px 28px;
+  border-right:1px solid var(--border);
+  background:#070500;
+  min-height:220px;
+}
+
+.terminal-out{
+  font-family:'Share Tech Mono',monospace;
+  font-size:11px;
+  background:#030200;
+  border:1px solid var(--border);
+  border-radius:2px;
+  padding:16px;
+  line-height:2;
+  min-height:140px;
+  color:var(--text2);
+  position:relative;
+  overflow:hidden;
+}
+.terminal-out::before{
+  content:'VOLUME ENGINE OUTPUT';
+  position:absolute;top:8px;right:12px;
+  font-size:9px;letter-spacing:.2em;color:var(--border2);
+}
+.t-line{display:flex;gap:10px}
+.t-prompt{color:var(--amber2);flex-shrink:0}
+.t-key{color:var(--text2)}
+.t-val{color:var(--amber3)}
+.t-val.big{font-size:18px;color:var(--amber);font-weight:700;
+  text-shadow:0 0 12px rgba(255,170,0,.5)}
+.t-val.src-cs{color:var(--cs)}
+.t-val.src-js{color:var(--amber3)}
+.t-val.green{color:var(--green);text-shadow:0 0 8px rgba(57,255,20,.4)}
+.cursor{display:inline-block;width:8px;height:14px;background:var(--amber);
+  animation:blink .8s step-end infinite;vertical-align:middle;margin-left:4px}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:0}}
+
+/* ── 3D VIEWER ────────────────────────────────────────────── */
+.viewer{
+  grid-area:viewer;
+  display:flex;flex-direction:column;
+  background:#030200;
+  position:relative;
+  border-left:1px solid var(--border2);
+}
+.viewer-bar{
+  display:flex;align-items:center;justify-content:space-between;
+  padding:14px 20px;
+  border-bottom:1px solid var(--border);
+  background:var(--panel);
+}
+.viewer-bar-left{
+  font-family:'Share Tech Mono',monospace;font-size:10px;letter-spacing:.2em;color:var(--amber2);
+}
+.viewer-bar-right{
+  font-family:'Share Tech Mono',monospace;font-size:10px;color:var(--text2);letter-spacing:.05em;
+}
+#cv3d{display:block;width:100%;flex:1;cursor:crosshair}
+.hud-tl{
+  position:absolute;top:56px;left:14px;
+  font-family:'Share Tech Mono',monospace;font-size:10px;color:var(--amber2);opacity:.5;
+  letter-spacing:.08em;line-height:1.8;
+}
+.hud-br{
+  position:absolute;bottom:16px;right:14px;
+  font-family:'Share Tech Mono',monospace;font-size:14px;color:var(--amber);
+  opacity:.85;text-shadow:0 0 10px rgba(255,170,0,.4);
+  letter-spacing:.05em;
+}
+.hud-bl{
+  position:absolute;bottom:16px;left:14px;
+  font-family:'Share Tech Mono',monospace;font-size:10px;color:var(--amber2);opacity:.55;
+  letter-spacing:.08em;
+}
+
+/* Corner brackets decoration */
+.corner{position:absolute;width:16px;height:16px;opacity:.5}
+.corner.tl{top:56px;left:8px;border-top:1px solid var(--amber);border-left:1px solid var(--amber)}
+.corner.tr{top:56px;right:8px;border-top:1px solid var(--amber);border-right:1px solid var(--amber)}
+.corner.bl{bottom:8px;left:8px;border-bottom:1px solid var(--amber);border-left:1px solid var(--amber)}
+.corner.br{bottom:8px;right:8px;border-bottom:1px solid var(--amber);border-right:1px solid var(--amber)}
+
+/* scrollbar */
+::-webkit-scrollbar{width:4px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:var(--border2)}
+</style>
+</head>
+<body>
+
+<!-- Grid background -->
+<canvas id="grid"></canvas>
+
+<!-- ── TOP BAR ── -->
+<div class="topbar">
+  <div class="logo">
+    VOLUME ENGINE
+    <span>IRREGULAR SOLID CALCULATOR  ·  V2.0</span>
+  </div>
+  <div class="topbar-right">
+    <div class="sys-pill">VB.NET ◆ C# ◆ JS</div>
+    <div class="sys-pill on" id="sysStatus">SYS ONLINE</div>
+    <div class="clock" id="clock">--:--:--</div>
+  </div>
+</div>
+
+<!-- ── MAIN ── -->
+<div class="main">
+
+  <!-- CONTROLS -->
+  <div class="controls">
+
+    <div class="section-title">CALCULATION ENGINE</div>
+
+    <div class="be-strip">
+      <button class="be-opt active" id="btnCS" onclick="setBackend('cs')">C# API</button>
+      <button class="be-opt" id="btnJS" onclick="setBackend('js')">JS ENGINE</button>
+    </div>
+
+    <div class="api-line" id="apiLine">
+      <div class="api-dot" id="apiDot"></div>
+      <input id="apiUrl" type="text" value="http://localhost:5050/api/volume" spellcheck="false"/>
+      <button class="ping-btn" onclick="pingApi()">PING</button>
+    </div>
+
+    <div class="section-title">SOLID FORM SELECTION</div>
+
+    <div class="solid-select-wrap">
+      <select id="solid" onchange="onSolidChange()">
+        <option value="0">Archimedean Spiral Torus</option>
+        <option value="1">Cassini Oval Spindle</option>
+        <option value="2">Superellipsoid Pod</option>
+        <option value="3">Gaussian Bell Solid</option>
+        <option value="4">Lemniscate Lens Body</option>
+      </select>
+    </div>
+
+    <div class="solid-meta">
+      <div class="solid-desc" id="sdesc"></div>
+      <div class="solid-eq" id="sformula"></div>
+      <div class="tags" id="stags"></div>
+    </div>
+
+    <div class="section-title">PARAMETERS</div>
+
+    <div class="param-grid">
+      <div class="param-block">
+        <div class="field-label">LENGTH L (cm)</div>
+        <input type="number" id="pL" value="12" min="0.1" step="0.5"/>
+      </div>
+      <div class="param-block">
+        <div class="field-label">MAX RADIUS R (cm)</div>
+        <input type="number" id="pR" value="4" min="0.1" step="0.1"/>
+      </div>
+      <div class="param-block">
+        <div class="field-label">FACTOR A</div>
+        <input type="number" id="pA" value="1.5" step="0.1"/>
+      </div>
+      <div class="param-block">
+        <div class="field-label">SHAPE PARAM N</div>
+        <input type="number" id="pN" value="2" step="0.1"/>
+      </div>
+    </div>
+
+    <button class="btn-calc" id="btnCalc" onclick="calculate()">
+      <span>▶ &nbsp; CALCULATE VOLUME</span>
+    </button>
+
+  </div>
+
+  <!-- RESULT / TERMINAL -->
+  <div class="result">
+    <div class="section-title">TERMINAL OUTPUT</div>
+    <div class="terminal-out" id="terminal">
+      <div class="t-line"><span class="t-prompt">&gt;</span><span class="t-key">system</span><span class="t-val">&nbsp;ready. select solid and press CALCULATE.</span></div>
+      <div class="t-line"><span class="t-prompt">&gt;</span><span class="t-key">engine</span><span class="t-val">&nbsp;C# ASP.NET Core API  |  fallback: JavaScript</span></div>
+      <div class="t-line"><span class="t-prompt">&gt;</span><span class="t-key">method</span><span class="t-val">&nbsp;Disk/Washer + Composite Simpson's Rule</span></div>
+      <div class="t-line"><span class="t-prompt">&gt;</span><span class="t-key">slices</span><span class="t-val">&nbsp;1000</span></div>
+      <div class="t-line"><span class="t-prompt">&gt;</span><span class="cursor"></span></div>
+    </div>
+  </div>
+
+  <!-- 3D VIEWER -->
+  <div class="viewer">
+    <div class="viewer-bar">
+      <div class="viewer-bar-left">3D SOLID RENDERER  //  DISK METHOD PREVIEW</div>
+      <div class="viewer-bar-right">DRAG TO ROTATE &nbsp;·&nbsp; AUTO-SPIN</div>
+    </div>
+    <canvas id="cv3d" style="flex:1;display:block;width:100%"></canvas>
+    <div class="corner tl"></div>
+    <div class="corner tr"></div>
+    <div class="corner bl"></div>
+    <div class="corner br"></div>
+    <div class="hud-tl" id="hudTL">SOLID: —<br>STATUS: IDLE</div>
+    <div class="hud-br" id="hudBR"></div>
+    <div class="hud-bl" id="hudBL">x-axis: LENGTH  ·  y-axis: RADIUS</div>
+  </div>
+
+</div>
+
+<script>
+/* ── Grid background ─────────────────────────────────────── */
+(function(){
+  const c=document.getElementById('grid'),ctx=c.getContext('2d');
+  function draw(){
+    c.width=innerWidth;c.height=innerHeight;
+    ctx.strokeStyle='rgba(58,46,24,0.6)';ctx.lineWidth=.5;
+    for(let x=0;x<c.width;x+=50){ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,c.height);ctx.stroke()}
+    for(let y=0;y<c.height;y+=50){ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(c.width,y);ctx.stroke()}
+  }
+  draw();window.addEventListener('resize',draw);
+})();
+
+/* ── Clock ───────────────────────────────────────────────── */
+setInterval(()=>{
+  const n=new Date();
+  document.getElementById('clock').textContent=
+    n.toTimeString().slice(0,8);
+},1000);
+
+/* ── NEW Solid catalogue ─────────────────────────────────── */
+const SOLIDS=[
+  {
+    name:'Archimedean Spiral Torus',
+    desc:'A torus-like solid whose cross-sectional radius grows with an Archimedean spiral — thicker at the outer rim, tapering inward in a smooth logarithmic sweep.',
+    formula:'r(x) = R · |sin(π·x/L)| + A · (x/L)^(1/N)',
+    tags:['Torus','Spiral','Organic'],
+    hue:38,
+    r:(x,L,R,A,N)=>R*Math.abs(Math.sin(Math.PI*x/L))+A*Math.pow(x/L+0.001,1/N)
+  },
+  {
+    name:'Cassini Oval Spindle',
+    desc:'Based on the Cassini oval — a quartic curve with two focal points. Produces a peanut-shaped solid that pinches at the centre when parameters are tuned.',
+    formula:'r(x) = √|R⁴ − (x−L/2)⁴|^(1/4) · A',
+    tags:['Cassini','Quartic','Pinched'],
+    hue:290,
+    r:(x,L,R,A,N)=>{
+      const u=x-L/2;
+      const v=Math.pow(R,4)-Math.pow(u/A,4);
+      return v>0?Math.pow(v,0.25)*A*0.6:0;
+    }
+  },
+  {
+    name:'Superellipsoid Pod',
+    desc:'A generalised ellipsoid controlled by the Lamé exponent N — ranges from a diamond cross-section (N<1) to a stadium/capsule shape (N>2), all as a solid of revolution.',
+    formula:'r(x) = R · (1 − |2x/L − 1|^N)^(1/N)',
+    tags:['Lamé','Pod','Superellipse'],
+    hue:160,
+    r:(x,L,R,A,N)=>{
+      const t=Math.abs(2*x/L-1);
+      const v=1-Math.pow(Math.min(t,1),N);
+      return v>0?R*Math.pow(v,1/N)*A:0;
+    }
+  },
+  {
+    name:'Gaussian Bell Solid',
+    desc:'A solid of revolution whose profile is a Gaussian bell curve — sharply peaked at the centre and decaying exponentially toward both ends, like a probability density function.',
+    formula:'r(x) = R · e^(−A·(x−L/2)² / L²) + N·e^(−8A·(x−L/2)²/L²)',
+    tags:['Gaussian','Bell','Statistical'],
+    hue:60,
+    r:(x,L,R,A,N)=>{
+      const u=(x-L/2)/L;
+      return R*Math.exp(-A*u*u*4)+N*Math.exp(-A*u*u*16);
+    }
+  },
+  {
+    name:'Lemniscate Lens Body',
+    desc:'Derived from Bernoulli\'s lemniscate — a figure-eight curve. When revolved, it creates a lens body that is widest at the centre and tapers to sharp points at both tips.',
+    formula:'r(x) = R · √|cos(2π·(x−L/2)/L)| · A',
+    tags:['Lemniscate','Lens','Bernoulli'],
+    hue:10,
+    r:(x,L,R,A,N)=>{
+      const t=2*Math.PI*(x-L/2)/L;
+      const v=Math.cos(t);
+      return v>0?R*Math.sqrt(v)*A:0;
+    }
+  }
+];
+
+/* ── State ───────────────────────────────────────────────── */
+let backend='cs';
+let lastVol=-1;
+
+function setBackend(b){
+  backend=b;
+  document.getElementById('btnCS').classList.toggle('active',b==='cs');
+  document.getElementById('btnJS').classList.toggle('active',b==='js');
+  document.getElementById('apiLine').style.display=b==='cs'?'flex':'none';
+}
+
+/* ── API ping ────────────────────────────────────────────── */
+async function pingApi(){
+  const url=document.getElementById('apiUrl').value.replace('/volume','/health');
+  const dot=document.getElementById('apiDot');
+  dot.className='api-dot';
+  try{
+    const res=await fetch(url,{signal:AbortSignal.timeout(3000)});
+    dot.className=res.ok?'api-dot ok':'api-dot err';
+  }catch{dot.className='api-dot err';}
+}
+
+/* ── JS Simpson ──────────────────────────────────────────── */
+function simpsonJS(fn,L,R,A,N,n=1000){
+  const h=L/n;let s=0;
+  for(let i=0;i<=n;i++){
+    const x=i*h,r=fn(x,L,R,A,N),f=Math.PI*r*r;
+    const c=(i===0||i===n)?1:(i%2?4:2);s+=c*f;
+  }
+  return s*h/3;
+}
+
+/* ── Terminal output ─────────────────────────────────────── */
+function terminalWrite(lines){
+  const t=document.getElementById('terminal');
+  t.innerHTML=lines.map(([p,k,v,cls])=>
+    `<div class="t-line"><span class="t-prompt">${p}</span><span class="t-key">${k}</span><span class="t-val ${cls||''}">&nbsp;${v}</span></div>`
+  ).join('')+
+  `<div class="t-line"><span class="t-prompt">&gt;</span><span class="cursor"></span></div>`;
+}
+
+/* ── Calculate ───────────────────────────────────────────── */
+async function calculate(){
+  const idx=+document.getElementById('solid').value;
+  const L=+document.getElementById('pL').value;
+  const R=+document.getElementById('pR').value;
+  const A=+document.getElementById('pA').value;
+  const N=+document.getElementById('pN').value;
+  if(L<=0||R<=0){alert('L and R must be > 0');return;}
+
+  const btn=document.getElementById('btnCalc');
+  btn.classList.add('loading');
+  btn.querySelector('span').textContent='▶   COMPUTING...';
+
+  if(backend==='cs') await calculateCS(idx,L,R,A,N);
+  else calculateJS(idx,L,R,A,N);
+
+  btn.classList.remove('loading');
+  btn.querySelector('span').textContent='▶ \u00A0 CALCULATE VOLUME';
+}
+
+async function calculateCS(idx,L,R,A,N){
+  const url=document.getElementById('apiUrl').value;
+  const dot=document.getElementById('apiDot');
+  try{
+    const res=await fetch(url,{
+      method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({solidIndex:idx,l:L,r:R,a:A,n:N}),
+      signal:AbortSignal.timeout(8000)
+    });
+    if(!res.ok)throw new Error('HTTP '+res.status);
+    const d=await res.json();
+    dot.className='api-dot ok';
+    showResult(d.volume,L,'C# ASP.NET Core','src-cs',d.slices,d.deltaX);
+  }catch(e){
+    dot.className='api-dot err';
+    terminalWrite([
+      ['>','warn','C# API unreachable — switching to JS engine',''],
+    ]);
+    setTimeout(()=>calculateJS(idx,L,R,A,N),400);
+  }
+}
+
+function calculateJS(idx,L,R,A,N){
+  const V=simpsonJS(SOLIDS[idx].r,L,R,A,N);
+  showResult(V,L,'JavaScript Engine','src-js',1000,L/1000);
+}
+
+function showResult(V,L,lang,cls,slices,dx){
+  lastVol=V;
+  const sd=SOLIDS[+document.getElementById('solid').value];
+  terminalWrite([
+    ['>','solid  ',sd.name,''],
+    ['>','method ','Disk/Washer  →  V = π∫[r(x)]² dx',''],
+    ['>','rule   ','Composite Simpson\'s  |  n = '+slices+' slices',''],
+    ['>','Δx     ',dx.toFixed(5)+' cm   |   range: 0 → '+L+' cm',''],
+    ['>','engine ',lang,cls],
+    ['>','VOLUME ',V.toFixed(6)+' cm³','big green'],
+  ]);
+  document.getElementById('hudBR').textContent='V = '+V.toFixed(2)+' cm³';
+  document.getElementById('hudTL').innerHTML=
+    'SOLID: '+sd.name.toUpperCase()+'<br>STATUS: COMPUTED';
+}
+
+/* ── UI init ─────────────────────────────────────────────── */
+function onSolidChange(){
+  const idx=+document.getElementById('solid').value;
+  const sd=SOLIDS[idx];
+  document.getElementById('sdesc').textContent=sd.desc;
+  document.getElementById('sformula').textContent=sd.formula;
+  document.getElementById('stags').innerHTML=sd.tags.map(t=>`<span class="tag">${t}</span>`).join('');
+  document.getElementById('hudTL').innerHTML='SOLID: '+sd.name.toUpperCase()+'<br>STATUS: IDLE';
+  document.getElementById('hudBR').textContent='';
+  lastVol=-1;
+  terminalWrite([
+    ['>','solid  ',sd.name,''],
+    ['>','status ','awaiting calculation...',''],
+  ]);
+}
+
+/* ── 3D Renderer ─────────────────────────────────────────── */
+const cv=document.getElementById('cv3d');
+const ctx3=cv.getContext('2d');
+let rotY=0.5,rotX=0.15,drag=false,mx=0,my=0,autoSpin=true;
+
+cv.addEventListener('mousedown',e=>{drag=true;mx=e.clientX;my=e.clientY;autoSpin=false});
+cv.addEventListener('touchstart',e=>{drag=true;mx=e.touches[0].clientX;my=e.touches[0].clientY;autoSpin=false},{passive:true});
+window.addEventListener('mousemove',e=>{if(!drag)return;rotY+=(e.clientX-mx)*0.012;rotX+=(e.clientY-my)*0.012;mx=e.clientX;my=e.clientY});
+window.addEventListener('touchmove',e=>{if(!drag)return;rotY+=(e.touches[0].clientX-mx)*0.012;rotX+=(e.touches[0].clientY-my)*0.012;mx=e.touches[0].clientX;my=e.touches[0].clientY},{passive:true});
+window.addEventListener('mouseup',()=>drag=false);
+window.addEventListener('touchend',()=>drag=false);
+
+function renderFrame(){
+  const dpr=window.devicePixelRatio||1;
+  const rect=cv.getBoundingClientRect();
+  const W=rect.width,H=rect.height;
+  if(!W||!H){requestAnimationFrame(renderFrame);return;}
+  if(cv.width!==W*dpr||cv.height!==H*dpr){cv.width=W*dpr;cv.height=H*dpr;}
+  ctx3.setTransform(dpr,0,0,dpr,0,0);
+  ctx3.clearRect(0,0,W,H);
+
+  // Grid
+  ctx3.strokeStyle='rgba(58,46,24,0.35)';ctx3.lineWidth=.5;
+  for(let x=0;x<W;x+=40){ctx3.beginPath();ctx3.moveTo(x,0);ctx3.lineTo(x,H);ctx3.stroke()}
+  for(let y=0;y<H;y+=40){ctx3.beginPath();ctx3.moveTo(0,y);ctx3.lineTo(W,y);ctx3.stroke()}
+
+  const idx=+document.getElementById('solid').value;
+  const L=+document.getElementById('pL').value||12;
+  const R=+document.getElementById('pR').value||4;
+  const A=+document.getElementById('pA').value||1.5;
+  const N=+document.getElementById('pN').value||2;
+  const sd=SOLIDS[idx];
+
+  rotX=Math.max(-1.4,Math.min(1.4,rotX));
+  const SLICES=72,RINGS=60;
+  const radii=[];let maxR=0;
+  for(let i=0;i<=SLICES;i++){
+    const x=i*L/SLICES;
+    const r=Math.max(0,sd.r(x,L,R,A,N));
+    radii.push(r);if(r>maxR)maxR=r;
+  }
+  if(maxR<.001)maxR=1;
+  const sc=Math.min((W*.4)/L,(H*.4)/maxR);
+  const cx=W/2,cy=H/2;
+  const cosY=Math.cos(rotY),sinY=Math.sin(rotY);
+  const cosX=Math.cos(rotX),sinX=Math.sin(rotX);
+
+  const pts=[],zs=[];
+  for(let i=0;i<=SLICES;i++){
+    pts.push([]);zs.push([]);
+    for(let j=0;j<=RINGS;j++){
+      const ang=j*2*Math.PI/RINGS;
+      const ax=(i*L/SLICES-L/2)*sc,ay=radii[i]*sc*Math.sin(ang),az=radii[i]*sc*Math.cos(ang);
+      const rx=ax*cosY-az*sinY,rz=ax*sinY+az*cosY;
+      const ry=ay*cosX-rz*sinX,rz2=ay*sinX+rz*cosX;
+      const fov=700,p=fov/(fov+rz2+300);
+      pts[i].push([cx+rx*p,cy-ry*p]);zs[i].push(rz2);
+    }
+  }
+
+  const quads=[];
+  for(let i=0;i<SLICES;i++)for(let j=0;j<RINGS;j++){
+    const j1=(j+1)%RINGS;
+    const depth=(zs[i][j]+zs[i+1][j]+zs[i+1][j1]+zs[i][j1])/4;
+    const dx2=pts[i+1][j][0]-pts[i][j][0],dy2=pts[i+1][j][1]-pts[i][j][1];
+    const ex=pts[i][j1][0]-pts[i][j][0],ey=pts[i][j1][1]-pts[i][j][1];
+    const nz=dx2*ey-dy2*ex;
+    const bright=Math.min(1,Math.max(0.1,Math.abs(nz)/(Math.abs(nz)+300)*1.2+0.1));
+    quads.push({i,j,j1,depth,bright,posAlong:i/SLICES});
+  }
+  quads.sort((a,b)=>b.depth-a.depth);
+
+  const HB=sd.hue;
+  for(const q of quads){
+    const{i,j,j1,bright,posAlong}=q;
+    const sat=70+bright*15,lig=Math.round(5+bright*50);
+    const alpha=Math.round(140+bright*100);
+    ctx3.beginPath();
+    ctx3.moveTo(pts[i][j][0],pts[i][j][1]);
+    ctx3.lineTo(pts[i+1][j][0],pts[i+1][j][1]);
+    ctx3.lineTo(pts[i+1][j1][0],pts[i+1][j1][1]);
+    ctx3.lineTo(pts[i][j1][0],pts[i][j1][1]);
+    ctx3.closePath();
+    ctx3.fillStyle=`hsla(${HB+posAlong*30},${sat}%,${lig}%,${alpha/255})`;
+    ctx3.fill();
+    if(bright>.45){ctx3.strokeStyle='rgba(255,200,80,0.05)';ctx3.lineWidth=.4;ctx3.stroke();}
+  }
+
+  // Axis line
+  const axL=[cx+(-L/2)*sc*cosY,cy],axR=[cx+(L/2)*sc*cosY,cy];
+  ctx3.beginPath();ctx3.moveTo(axL[0],axL[1]);ctx3.lineTo(axR[0],axR[1]);
+  ctx3.strokeStyle='rgba(255,170,0,0.18)';ctx3.lineWidth=1;ctx3.setLineDash([4,6]);ctx3.stroke();ctx3.setLineDash([]);
+
+  // Tick marks
+  for(let i=0;i<=4;i++){
+    const tx=cx+(-L/2+i*L/4)*sc*cosY;
+    ctx3.beginPath();ctx3.moveTo(tx,cy-4);ctx3.lineTo(tx,cy+4);
+    ctx3.strokeStyle='rgba(255,170,0,0.3)';ctx3.lineWidth=1;ctx3.setLineDash([]);ctx3.stroke();
+  }
+
+  if(autoSpin)rotY+=.008;
+  requestAnimationFrame(renderFrame);
+}
+
+/* ── C# API for VolumeApi.cs ─────────────────────────────── */
+// Same C# API as v1 — run: cd api && dotnet run
+// POST http://localhost:5050/api/volume
+// Body: { solidIndex, l, r, a, n }
+
+onSolidChange();
+setBackend('cs');
+renderFrame();
+pingApi();
+</script>
+</body>
+</html>
